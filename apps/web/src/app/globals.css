@@ -1,0 +1,132 @@
+@import "tailwindcss";
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   WEBORTEX BRAND COLOR SYSTEM
+   Dark-first design:
+     • Dark surfaces  (#060606 / #222222 / #3b3b3b)  → light text  (#efefef)
+     • Light surfaces (white / near-white)            → dark text   (#060606)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── Core Surfaces ─────────────────────────────────────────────────────── */
+  --background:          #060606;   /* backgroundColor  — near-black page base */
+  --foreground:          #efefef;   /* textColor        — primary text on dark  */
+
+  --card:                #222222;   /* brandsBgColor    — elevated card surface */
+  --card-foreground:     #efefef;
+
+  --popover:             #1a1a1a;   /* dropdown / popover surface              */
+  --popover-foreground:  #efefef;
+
+  /* ── Brand Primary — Webortex Green ───────────────────────────────────── */
+  --primary:             #62ba47;   /* logoGreenColor / buttonBgColor          */
+  --primary-foreground:  #060606;   /* buttonTextColor — dark text on green    */
+
+  /* ── Brand Secondary — Webortex Blue ──────────────────────────────────── */
+  --secondary:           #009dda;   /* logoBlueColor                           */
+  --secondary-foreground:#060606;   /* dark text on blue buttons               */
+
+  /* ── Muted / Surfaces ─────────────────────────────────────────────────── */
+  --muted:               #3b3b3b;   /* viewProfileBtnBgColor — elevated surface*/
+  --muted-foreground:    #a0a0a0;   /* secondaryTextColor                      */
+
+  /* ── Accent (mirrors Primary green) ───────────────────────────────────── */
+  --accent:              #62ba47;
+  --accent-foreground:   #060606;
+
+  /* ── Destructive ──────────────────────────────────────────────────────── */
+  --destructive:         #ef4444;
+  --destructive-foreground: #efefef;
+
+  /* ── Borders & Inputs ─────────────────────────────────────────────────── */
+  --border:              #3b3b3b;
+  --input:               #1a1a1a;   /* input field background                  */
+  --ring:                #62ba47;   /* focus ring — brand green                */
+
+  /* ── Named Brand Tokens (use in arbitrary Tailwind classes) ───────────── */
+  --brand-green:         #62ba47;   /* logoGreenColor                          */
+  --brand-green-hover:   #56a63e;   /* darker green for hover states           */
+  --brand-green-light:   #bcd195;   /* navlinkHoverColor — soft green          */
+  --brand-blue:          #009dda;   /* logoBlueColor                           */
+  --brand-blue-hover:    #0085bb;   /* darker blue for hover states            */
+  --brand-dark:          #060606;   /* backgroundColor (also used as dark text)*/
+  --brand-card:          #222222;   /* brandsBgColor                           */
+  --brand-elevated:      #3b3b3b;   /* viewProfileBtnBgColor                   */
+  --brand-text:          #efefef;   /* textColor                               */
+  --brand-text-muted:    #a0a0a0;   /* secondaryTextColor                      */
+  --brand-text-cover:    #c5c5c5;   /* coverMainTextColor                      */
+  --brand-text-nav:      #ffffff;   /* navlinkColor                            */
+  --brand-border-dark:   #3b3b3b;   /* dark surface borders                    */
+  --brand-border-light:  #d9d9d9;   /* pricingBorderColor — light section borders*/
+
+  /* ── ATS Score Colors ─────────────────────────────────────────────────── */
+  --score-excellent:     #62ba47;   /* brand green  */
+  --score-good:          #009dda;   /* brand blue   */
+  --score-fair:          #f59e0b;   /* amber        */
+  --score-poor:          #ef4444;   /* red          */
+
+  --radius: 0.5rem;
+}
+
+/* ── Tailwind v4 theme bridge ─────────────────────────────────────────────── */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+}
+
+/* ── Base resets ──────────────────────────────────────────────────────────── */
+* {
+  border-color: var(--border);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Scrollbar ────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar          { width: 6px; height: 6px; }
+::-webkit-scrollbar-track    { background: transparent; }
+::-webkit-scrollbar-thumb    { background: #3b3b3b; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #a0a0a0; }
+
+/* ── ATS Score ring animation ─────────────────────────────────────────────── */
+@keyframes score-reveal {
+  from { stroke-dashoffset: 251; }
+}
+.score-ring-animate { animation: score-reveal 1s ease-out forwards; }
+
+/* ── Skeleton shimmer ─────────────────────────────────────────────────────── */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, #222222 25%, #3b3b3b 50%, #222222 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+/* ── PDF Preview ──────────────────────────────────────────────────────────── */
+.pdf-viewer canvas { max-width: 100%; height: auto !important; }
+
+/* ── Gradient text — Webortex green → blue ────────────────────────────────── */
+.gradient-text {
+  background: linear-gradient(135deg, #62ba47 0%, #009dda 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ── Glow utilities ───────────────────────────────────────────────────────── */
+.glow-green { box-shadow: 0 0 24px rgba(98, 186, 71, 0.25); }
+.glow-blue  { box-shadow: 0 0 24px rgba(0, 157, 218, 0.25); }
+
+/* ── Green underline link ─────────────────────────────────────────────────── */
+.link-green {
+  color: #62ba47;
+  text-underline-offset: 3px;
+}
+.link-green:hover { color: #bcd195; text-decoration: underline; }
