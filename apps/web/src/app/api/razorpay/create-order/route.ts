@@ -1,57 +1,78 @@
 import { NextRequest, NextResponse } from "next/server";
-
-// Razorpay plan IDs (set these after creating plans in Razorpay dashboard)
-const PLAN_IDS = {
-  pro_monthly: process.env.RAZORPAY_PLAN_ID_MONTHLY || "plan_monthly_placeholder",
-  pro_annual: process.env.RAZORPAY_PLAN_ID_ANNUAL || "plan_annual_placeholder",
-};
+import { z } from "zod";
+import { requireAuth } from "@/lib/middleware/auth";
 
 const PRICES = {
-  monthly: 29900, // ₹299 in paise
-  annual: 249900,  // ₹2,499 in paise
-};
+  monthly: 29900,  // ₹299 in paise (includes 18% GST)
+  annual:  249900, // ₹2,499 in paise
+} as const;
+
+const CreateOrderSchema = z.object({
+  plan:    z.literal("pro"),
+  billing: z.enum(["monthly", "annual"]),
+});
 
 export async function POST(request: NextRequest) {
+  // ── 1. Authentication ───────────────────────────────────────────────────────
+  const auth = await requireAuth(request);
+  if (auth.error) return auth.error;
+
+  // ── 2. Input validation ─────────────────────────────────────────────────────
+  let body: z.infer<typeof CreateOrderSchema>;
   try {
-    const { plan, billing } = await request.json() as {
-      plan: string;
-      billing: "monthly" | "annual";
-    };
+    body = CreateOrderSchema.parse(await request.json());
+  } catch {
+    return NextResponse.json({ error: "Invalid plan or billing cycle" }, { status: 400 });
+  }
 
-    if (plan !== "pro") {
-      return NextResponse.json({ error: "Invalid plan" }, { status: 400 });
+  const { billing } = body;
+  const amount = PRICES[billing];
+
+  // ── 3. Guard: secret must be configured ────────────────────────────────────
+  const keyId     = process.env.RAZORPAY_KEY_ID;
+  const keySecret = process.env.RAZORPAY_KEY_SECRET;
+
+  if (!keyId || !keySecret) {
+    if (process.env.NODE_ENV === "development") {
+      // Return a stub order in development
+      return NextResponse.json({
+        orderId:  `order_dev_${Date.now()}`,
+        amount,
+        currency: "INR",
+        stub:     true,
+        message:  "Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET to enable real payments.",
+      });
     }
+    return NextResponse.json(
+      { error: "Payment service not configured" },
+      { status: 503 }
+    );
+  }
 
-    // ── Real Razorpay Integration ─────────────────────────────────────────────
-    // const Razorpay = (await import("razorpay")).default;
-    // const razorpay = new Razorpay({
-    //   key_id: process.env.RAZORPAY_KEY_ID!,
-    //   key_secret: process.env.RAZORPAY_KEY_SECRET!,
-    // });
-    //
-    // const order = await razorpay.orders.create({
-    //   amount: PRICES[billing],
-    //   currency: "INR",
-    //   receipt: `receipt_${Date.now()}`,
-    //   notes: { plan, billing },
-    // });
-    //
-    // return NextResponse.json({
-    //   orderId: order.id,
-    //   amount: order.amount,
-    //   currency: order.currency,
-    // });
+  try {
+    // ── 4. Create Razorpay order ─────────────────────────────────────────────
+    const Razorpay = (await import("razorpay")).default;
+    const razorpay = new Razorpay({ key_id: keyId, key_secret: keySecret });
 
-    // ── Stub for Phase 3 integration ─────────────────────────────────────────
-    return NextResponse.json({
-      orderId: `order_stub_${Date.now()}`,
-      amount: PRICES[billing],
+    const order = await razorpay.orders.create({
+      amount,
       currency: "INR",
-      message: "Razorpay integration active in Phase 3. Install: npm install razorpay",
+      receipt:  `rcpt_${auth.uid.slice(0, 8)}_${Date.now()}`,
+      notes: {
+        userId:  auth.uid,
+        email:   auth.email ?? "",
+        plan:    "pro",
+        billing,
+      },
     });
 
-  } catch (error) {
-    console.error("Create order error:", error);
-    return NextResponse.json({ error: "Failed to create order" }, { status: 500 });
+    return NextResponse.json({
+      orderId:  order.id,
+      amount:   order.amount,
+      currency: order.currency,
+    });
+  } catch (err: unknown) {
+    console.error("[razorpay/create-order]", err);
+    return NextResponse.json({ error: "Failed to create payment order" }, { status: 500 });
   }
 }

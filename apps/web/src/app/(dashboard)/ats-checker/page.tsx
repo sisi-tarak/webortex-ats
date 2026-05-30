@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useState, useCallback, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { BarChart3, FileText, Sparkles, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -10,82 +10,90 @@ import { Badge } from "@/components/ui/Badge";
 import { ATSScoreCard } from "@/components/ats/ATSScoreCard";
 import { useResumes } from "@/hooks/useResumes";
 import { useAuth } from "@/hooks/useAuth";
-import { saveATSReport } from "@/lib/firebase/firestore";
-import type { ATSReport } from "@/lib/types";
+import { getATSUsage } from "@/lib/firebase/firestore";
+import type { ATSReport, ResumeFormData } from "@/lib/types";
+import { PLAN_LIMITS, UPGRADE_MESSAGES } from "@/lib/constants";
 import { toast } from "sonner";
 
-// Mock ATS report generator (real scoring comes from Python backend in Phase 2)
-function generateMockReport(resumeId: string, userId: string, jd: string): ATSReport {
-  const hasJD = jd.trim().length > 50;
-  const score = Math.floor(Math.random() * 30) + (hasJD ? 55 : 45);
+// ─── Extract plaintext from formData for ATS analysis ────────────────────────
+function extractResumeText(formData: ResumeFormData): string {
+  const parts: string[] = [];
+  const { contact, summary, experience, education, skills, projects, certifications, achievements, languages } = formData;
 
-  return {
-    id: Math.random().toString(36).slice(2),
-    resumeId,
-    userId,
-    score,
-    breakdown: {
-      keywords: {
-        score: hasJD ? Math.floor(score * 0.3) : 12,
-        matched: hasJD ? ["Python", "React", "leadership", "agile", "REST API"] : ["communication", "teamwork"],
-        missing: hasJD ? ["Kubernetes", "CI/CD", "stakeholder management"] : ["Python", "React", "agile"],
-        density: 3.2,
-      },
-      format: {
-        score: 18,
-        issues: [],
-        isSingleColumn: true,
-        hasNoTables: true,
-        hasNoImages: true,
-      },
-      sections: {
-        score: 12,
-        present: ["Contact", "Summary", "Experience", "Education", "Skills"],
-        missing: ["Certifications"],
-      },
-      quantitative: {
-        score: Math.floor(score * 0.2),
-        percentage: Math.floor(Math.random() * 40) + 20,
-        weakBullets: [
-          "Managed a team",
-          "Worked on backend systems",
-          "Helped with product development",
-        ],
-      },
-      dateFormatting: {
-        score: 9,
-        issues: [],
-      },
-      contactInfo: {
-        score: 4,
-        hasEmail: true,
-        hasPhone: true,
-        hasLinkedIn: false,
-      },
-    },
-    suggestions: [
-      { category: "quantitative", priority: "critical", message: "3 bullet points lack quantitative metrics", action: "Add numbers: team size, percentage improvement, time saved, revenue generated" },
-      { category: "contactInfo", priority: "high", message: "LinkedIn URL is missing from contact section", action: "Add your LinkedIn profile URL — recruiters and ATS systems look for it" },
-      ...(hasJD ? [{ category: "keywords" as const, priority: "high" as const, message: "3 critical keywords from the JD are missing", action: "Add 'Kubernetes', 'CI/CD', and 'stakeholder management' to relevant sections" }] : []),
-      { category: "sections", priority: "medium", message: "No Certifications section found", action: "Add certifications section if you have relevant credentials" },
-    ],
-    jobDescription: jd,
-    createdAt: new Date().toISOString(),
-  };
+  // Contact
+  parts.push([contact.fullName, contact.email, contact.phone, contact.location].filter(Boolean).join(" | "));
+  if (contact.linkedinUrl) parts.push(contact.linkedinUrl);
+
+  // Summary
+  if (summary) parts.push(summary);
+
+  // Experience
+  experience.forEach((exp) => {
+    parts.push(`${exp.jobTitle} at ${exp.company} | ${exp.startDate} – ${exp.endDate}`);
+    exp.bullets.filter(Boolean).forEach((b) => parts.push(`• ${b}`));
+  });
+
+  // Education
+  education.forEach((edu) => {
+    parts.push(`${edu.degree} ${edu.field} – ${edu.institution} (${edu.startDate}–${edu.endDate})`);
+    if (edu.gpa) parts.push(`GPA: ${edu.gpa}`);
+  });
+
+  // Skills
+  skills.forEach((s) => {
+    parts.push(`${s.category}: ${s.items.join(", ")}`);
+  });
+
+  // Projects
+  projects.forEach((p) => {
+    parts.push(`${p.title} | ${p.technologies.join(", ")}`);
+    p.bullets.filter(Boolean).forEach((b) => parts.push(`• ${b}`));
+  });
+
+  // Certifications
+  certifications.forEach((c) => {
+    parts.push(`${c.name} – ${c.issuer} (${c.date})`);
+  });
+
+  // Achievements
+  achievements.filter(Boolean).forEach((a) => parts.push(`• ${a}`));
+
+  // Languages
+  languages.forEach((l) => parts.push(`${l.language}: ${l.proficiency}`));
+
+  return parts.filter(Boolean).join("\n");
 }
 
 function ATSCheckerContent() {
   const searchParams = useSearchParams();
   const resumeIdParam = searchParams.get("resumeId");
-  const { user, isPro } = useAuth();
+  const { user, profile, isPro } = useAuth();
   const { resumes } = useResumes();
   const [selectedResumeId, setSelectedResumeId] = useState(resumeIdParam || "");
   const [jobDescription, setJobDescription] = useState("");
   const [scoring, setScoring] = useState(false);
   const [report, setReport] = useState<ATSReport | null>(null);
+  const [usageCount, setUsageCount] = useState<number | null>(null);
 
   const selectedResume = resumes.find((r) => r.id === selectedResumeId);
   void selectedResume; // used for future resume title display
+
+  // Load current month's ATS usage on mount
+  const loadUsage = useCallback(async () => {
+    if (!user) return;
+    const count = await getATSUsage(user.uid);
+    setUsageCount(count);
+  }, [user]);
+
+  useEffect(() => {
+    loadUsage();
+  }, [loadUsage]);
+
+  const plan = profile?.plan ?? "free";
+  const monthlyLimit = PLAN_LIMITS[plan].atsChecksPerMonth;
+  const checksUsed = usageCount ?? 0;
+  const checksRemaining = monthlyLimit === Infinity ? Infinity : Math.max(0, monthlyLimit - checksUsed);
+  const atLimitForMonth = checksRemaining === 0;
 
   const handleScore = async () => {
     if (!selectedResumeId) {
@@ -94,22 +102,68 @@ function ATSCheckerContent() {
     }
     if (!user) return;
 
+    // ─── Plan enforcement ─────────────────────────────────────────────────
+    if (atLimitForMonth) {
+      toast.error(UPGRADE_MESSAGES.atsLimit);
+      return;
+    }
+
     setScoring(true);
     try {
-      // In Phase 2: call the real ATS API
-      // For now: generate a mock report
-      await new Promise((res) => setTimeout(res, 2000)); // simulate API call
-      const mockReport = generateMockReport(selectedResumeId, user.uid, jobDescription);
-      setReport(mockReport);
-      // Save to Firestore
-      await saveATSReport({
-        resumeId: mockReport.resumeId,
-        userId: mockReport.userId,
-        score: mockReport.score,
-        breakdown: mockReport.breakdown,
-        suggestions: mockReport.suggestions,
-        jobDescription: mockReport.jobDescription,
+      // Extract plaintext for scoring
+      const resumeText = selectedResume
+        ? extractResumeText(selectedResume.formData)
+        : "No resume content available for analysis.";
+
+      // Get Firebase ID token for API auth
+      const idToken = await user.getIdToken();
+
+      const res = await fetch("/api/ats-score", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          resumeId: selectedResumeId,
+          resumeText,
+          jobDescription: jobDescription || undefined,
+        }),
       });
+
+      if (res.status === 403) {
+        const body = (await res.json()) as { code?: string };
+        if (body.code === "ATS_LIMIT_REACHED") {
+          toast.error(UPGRADE_MESSAGES.atsLimit);
+          return;
+        }
+      }
+
+      if (!res.ok) {
+        throw new Error(`Scoring failed: ${res.status}`);
+      }
+
+      const data = (await res.json()) as {
+        score: number;
+        reportId: string;
+        breakdown: ATSReport["breakdown"];
+        suggestions: ATSReport["suggestions"];
+      };
+
+      const fullReport: ATSReport = {
+        id: data.reportId,
+        resumeId: selectedResumeId,
+        userId: user.uid,
+        score: data.score,
+        breakdown: data.breakdown,
+        suggestions: data.suggestions,
+        jobDescription,
+        createdAt: new Date().toISOString(),
+      };
+
+      setReport(fullReport);
+      // Server-side route already incremented usage — sync local counter
+      setUsageCount((prev) => (prev ?? 0) + 1);
       toast.success("ATS score calculated!");
     } catch {
       toast.error("Failed to calculate ATS score. Please try again.");
@@ -201,13 +255,30 @@ function ATSCheckerContent() {
 
           {/* Free tier limit warning */}
           {!isPro && (
-            <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-start gap-2">
-              <AlertCircle className="h-4 w-4 text-amber-400 flex-shrink-0 mt-0.5" />
+            <div className={`p-3 rounded-lg border flex items-start gap-2 ${
+              atLimitForMonth
+                ? "bg-red-500/10 border-red-500/30"
+                : "bg-amber-500/10 border-amber-500/30"
+            }`}>
+              <AlertCircle className={`h-4 w-4 flex-shrink-0 mt-0.5 ${atLimitForMonth ? "text-red-400" : "text-amber-400"}`} />
               <div>
-                <p className="text-xs font-medium text-amber-400">Free plan: 2 ATS checks/month</p>
-                <p className="text-xs text-[var(--muted-foreground)]">
-                  Upgrade to Pro for unlimited checks and AI-powered suggestions.
-                </p>
+                {atLimitForMonth ? (
+                  <>
+                    <p className="text-xs font-medium text-red-400">Monthly limit reached</p>
+                    <p className="text-xs text-[var(--muted-foreground)]">
+                      Upgrade to Pro for unlimited ATS checks and AI suggestions.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-xs font-medium text-amber-400">
+                      Free plan: {checksRemaining === Infinity ? "∞" : checksRemaining} check{checksRemaining !== 1 ? "s" : ""} remaining this month
+                    </p>
+                    <p className="text-xs text-[var(--muted-foreground)]">
+                      Upgrade to Pro for unlimited checks and AI-powered suggestions.
+                    </p>
+                  </>
+                )}
               </div>
             </div>
           )}
@@ -217,7 +288,7 @@ function ATSCheckerContent() {
             size="lg"
             onClick={handleScore}
             loading={scoring}
-            disabled={!selectedResumeId}
+            disabled={!selectedResumeId || atLimitForMonth}
           >
             <BarChart3 className="h-4 w-4" />
             {scoring ? "Analyzing Resume..." : "Calculate ATS Score"}

@@ -29,7 +29,7 @@ import { updateResume } from "@/lib/firebase/firestore";
 import { toast } from "sonner";
 
 // ─── Section collapse state ───────────────────────────────────────────────────
-type SectionKey = "contact" | "summary" | "experience" | "education" | "skills" | "projects" | "certifications";
+type SectionKey = "contact" | "summary" | "experience" | "education" | "skills" | "projects" | "certifications" | "achievements" | "languages";
 
 // ─── Form schema ─────────────────────────────────────────────────────────────
 const resumeFormSchema = z.object({
@@ -82,6 +82,11 @@ const resumeFormSchema = z.object({
     issuer: z.string(),
     date: z.string(),
     url: z.string().optional(),
+  })),
+  achievements: z.array(z.string()),
+  languages: z.array(z.object({
+    language: z.string().min(1, "Required"),
+    proficiency: z.string().min(1, "Required"),
   })),
 });
 
@@ -153,7 +158,12 @@ export function ResumeEditor({
     reset,
   } = useForm<ResumeFormValues>({
     resolver: zodResolver(resumeFormSchema),
-    defaultValues: resume.formData as ResumeFormValues,
+    defaultValues: {
+      ...resume.formData,
+      // Guard: old documents may not have these sections
+      achievements: resume.formData.achievements ?? [],
+      languages: resume.formData.languages ?? [],
+    } as ResumeFormValues,
   });
 
   const {
@@ -185,6 +195,12 @@ export function ResumeEditor({
     append: appendCert,
     remove: removeCert,
   } = useFieldArray({ control, name: "certifications" });
+
+  const {
+    fields: langFields,
+    append: appendLang,
+    remove: removeLang,
+  } = useFieldArray({ control, name: "languages" });
 
   // Auto-save to Firestore on change (debounced 1.5s)
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -535,6 +551,75 @@ export function ResumeEditor({
               </Button>
             </div>
           </Section>
+
+          {/* ACHIEVEMENTS */}
+          <Section title="Achievements & Awards" icon={<span className="text-base">🏆</span>}>
+            <div className="space-y-1">
+              <p className="text-xs text-[var(--muted-foreground)] mb-3">
+                Hackathon wins, academic honours, open-source contributions, recognitions — anything that sets you apart.
+              </p>
+              <BulletList
+                register={register as unknown as UseFormRegister<FieldValues>}
+                prefix="achievements"
+                defaultBullets={
+                  resume.formData.achievements?.length
+                    ? resume.formData.achievements
+                    : [""]
+                }
+                placeholder="Won 1st place at HackIndia 2024 out of 500+ teams"
+              />
+            </div>
+          </Section>
+
+          {/* LANGUAGES */}
+          <Section title="Languages" icon={<span className="text-base">🌐</span>} badge={`${langFields.length} entries`}>
+            <div className="space-y-3">
+              {langFields.map((field, index) => (
+                <div key={field.id} className="flex items-end gap-3 relative">
+                  <div className="flex-1">
+                    <Input
+                      label="Language"
+                      placeholder="Hindi"
+                      required
+                      {...register(`languages.${index}.language`)}
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium text-[var(--foreground)]">Proficiency</label>
+                      <select
+                        {...register(`languages.${index}.proficiency`)}
+                        className="w-full px-3 py-2 text-sm rounded-md border border-[var(--border)] bg-[var(--input)] text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--ring)] cursor-pointer"
+                      >
+                        <option value="">Select level</option>
+                        <option value="Native">Native</option>
+                        <option value="Fluent">Fluent</option>
+                        <option value="Professional">Professional Working</option>
+                        <option value="Conversational">Conversational</option>
+                        <option value="Elementary">Elementary</option>
+                      </select>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeLang(index)}
+                    className="mb-0.5 p-2 rounded text-red-400 hover:text-red-400 hover:bg-red-500/10 transition-colors flex-shrink-0"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              ))}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={() => appendLang({ language: "", proficiency: "" })}
+              >
+                <Plus className="h-4 w-4" /> Add Language
+              </Button>
+            </div>
+          </Section>
         </div>
       </div>
 
@@ -596,10 +681,12 @@ function BulletList({
   register,
   prefix,
   defaultBullets,
+  placeholder = "Led a team of 5 engineers to deliver X, resulting in Y% improvement",
 }: {
   register: UseFormRegister<FieldValues>;
   prefix: string;
   defaultBullets: string[];
+  placeholder?: string;
 }) {
   const [bullets, setBullets] = useState(defaultBullets.length ? defaultBullets : [""]);
 
@@ -610,7 +697,7 @@ function BulletList({
           <span className="mt-2.5 text-[var(--muted-foreground)] text-xs">•</span>
           <input
             {...register(`${prefix}.${i}`)}
-            placeholder="Led a team of 5 engineers to deliver X, resulting in Y% improvement"
+            placeholder={placeholder}
             className="flex-1 px-3 py-2 text-sm rounded-md border border-[var(--input)] bg-[var(--card)] text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
           />
           {bullets.length > 1 && (

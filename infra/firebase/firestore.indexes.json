@@ -1,0 +1,63 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "resumes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId",    "order": "ASCENDING" },
+        { "fieldPath": "updatedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "resumes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId",    "order": "ASCENDING" },
+        { "fieldPath": "status",    "order": "ASCENDING" },
+        { "fieldPath": "updatedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "resumes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId",      "order": "ASCENDING" },
+        { "fieldPath": "templateId",  "order": "ASCENDING" },
+        { "fieldPath": "updatedAt",   "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "ats_reports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "resumeId",  "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "ats_reports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId",    "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "ats_usage",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "uid",       "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "templates",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "isPremium",      "order": "ASCENDING" },
+        { "fieldPath": "downloadCount",  "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

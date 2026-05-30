@@ -1,0 +1,134 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Helpers
+    // ─────────────────────────────────────────────────────────────────────────
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isValidPlan(plan) {
+      return plan in ['free', 'pro', 'enterprise'];
+    }
+
+    function notChangingProtectedFields() {
+      // Prevent clients from directly updating billing/plan fields.
+      // Only Firebase Admin (server-side) can write these.
+      let protected = ['plan', 'planExpiresAt', 'resumeCount'];
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(protected);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // users/{uid}
+    // ─────────────────────────────────────────────────────────────────────────
+    match /users/{uid} {
+      // Any authenticated user can read their own profile
+      allow read: if isOwner(uid);
+
+      // On create: user sets their own document (triggered by ensureUserProfile)
+      allow create: if isOwner(uid)
+        && request.resource.data.uid == uid
+        && isValidPlan(request.resource.data.plan)
+        && request.resource.data.plan == 'free'; // must start on free
+
+      // On update: user can update display name, phone, photoURL.
+      // Billing fields (plan, planExpiresAt) can ONLY be written by Admin SDK.
+      allow update: if isOwner(uid) && notChangingProtectedFields();
+
+      // No client-side deletes
+      allow delete: if false;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // resumes/{resumeId}
+    // ─────────────────────────────────────────────────────────────────────────
+    match /resumes/{resumeId} {
+      // Read: only the owner
+      allow read: if isSignedIn()
+        && resource.data.userId == request.auth.uid;
+
+      // Create: must be authenticated and set own userId
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.keys().hasAll(['userId', 'title', 'templateId', 'status'])
+        && request.resource.data.status == 'draft';
+
+      // Update: must be the owner; cannot change userId or status to 'compiled'
+      // (compiled status set by backend after successful LaTeX compile)
+      allow update: if isSignedIn()
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.userId == request.auth.uid;
+
+      // Delete: must be the owner
+      allow delete: if isSignedIn()
+        && resource.data.userId == request.auth.uid;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // templates/{templateId} — read-only for authenticated users
+    // ─────────────────────────────────────────────────────────────────────────
+    match /templates/{templateId} {
+      allow read:  if isSignedIn();
+      allow write: if false; // Admin-only (seeded via Admin SDK / scripts)
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // ats_reports/{reportId}
+    // ─────────────────────────────────────────────────────────────────────────
+    match /ats_reports/{reportId} {
+      allow read: if isSignedIn()
+        && resource.data.userId == request.auth.uid;
+
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.score is int
+        && request.resource.data.score >= 0
+        && request.resource.data.score <= 100;
+
+      allow update, delete: if false; // Reports are immutable
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // ats_usage/{uid_YYYY-MM} — monthly ATS check counter
+    // ─────────────────────────────────────────────────────────────────────────
+    match /ats_usage/{docId} {
+      allow read: if isSignedIn()
+        && docId.matches(request.auth.uid + '_.*');
+
+      allow create, update: if isSignedIn()
+        && docId.matches(request.auth.uid + '_.*')
+        && request.resource.data.uid == request.auth.uid;
+
+      allow delete: if false;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // subscriptions/{uid} — written only by Admin SDK (webhook)
+    // ─────────────────────────────────────────────────────────────────────────
+    match /subscriptions/{uid} {
+      allow read:  if isOwner(uid);
+      allow write: if false; // Admin only
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // payment_events — written only by Admin SDK
+    // ─────────────────────────────────────────────────────────────────────────
+    match /payment_events/{eventId} {
+      allow read, write: if false; // Admin only
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Deny all other collections by default
+    // ─────────────────────────────────────────────────────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

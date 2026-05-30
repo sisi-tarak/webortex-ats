@@ -6,6 +6,8 @@ import {
   setDoc,
   updateDoc,
   deleteDoc,
+  increment,
+  onSnapshot,
   query,
   where,
   orderBy,
@@ -13,6 +15,7 @@ import {
   serverTimestamp,
   Timestamp,
   type QueryConstraint,
+  type Unsubscribe,
 } from "firebase/firestore";
 import { db } from "./config";
 import type { Resume, UserProfile, Template, ATSReport } from "@/lib/types";
@@ -49,6 +52,30 @@ export async function getUserResumes(uid: string): Promise<Resume[]> {
   );
   const snap = await getDocs(q);
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Resume);
+}
+
+/**
+ * Real-time subscription to a user's resumes.
+ * Returns an unsubscribe function — call it in useEffect cleanup.
+ */
+export function subscribeToUserResumes(
+  uid: string,
+  onChange: (resumes: Resume[]) => void,
+  onError?: (error: Error) => void
+): Unsubscribe {
+  const q = query(
+    collection(db, "resumes"),
+    where("userId", "==", uid),
+    orderBy("updatedAt", "desc")
+  );
+  return onSnapshot(
+    q,
+    (snap) => {
+      const resumes = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Resume);
+      onChange(resumes);
+    },
+    (error) => onError?.(error)
+  );
 }
 
 export async function createResume(
@@ -159,7 +186,56 @@ export async function saveATSReport(
   return ref.id;
 }
 
-// Timestamp helper
+// ─── ATS Usage (monthly counter) ─────────────────────────────────────────────
+
+/** Returns the document ID for this month's ATS usage counter, e.g. "uid_2025-06" */
+export function atsUsageDocId(uid: string): string {
+  const now = new Date();
+  const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  return `${uid}_${month}`;
+}
+
+export interface ATSUsage {
+  uid: string;
+  count: number;
+  month: string; // "YYYY-MM"
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Get the current month's ATS check count for a user. Returns 0 if no doc exists yet. */
+export async function getATSUsage(uid: string): Promise<number> {
+  const docId = atsUsageDocId(uid);
+  const snap = await getDoc(doc(db, "ats_usage", docId));
+  if (!snap.exists()) return 0;
+  return (snap.data() as ATSUsage).count ?? 0;
+}
+
+/** Atomically increment the ATS usage counter for the current month. */
+export async function incrementATSUsage(uid: string): Promise<void> {
+  const docId = atsUsageDocId(uid);
+  const ref = doc(db, "ats_usage", docId);
+  const now = new Date();
+  const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+  const snap = await getDoc(ref);
+  if (snap.exists()) {
+    await updateDoc(ref, {
+      count: increment(1),
+      updatedAt: serverTimestamp(),
+    });
+  } else {
+    await setDoc(ref, {
+      uid,
+      count: 1,
+      month,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  }
+}
+
+// ─── Timestamp helper ────────────────────────────────────────────────────────
 export function toDate(ts: Timestamp | string): Date {
   if (ts instanceof Timestamp) return ts.toDate();
   return new Date(ts);

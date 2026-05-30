@@ -3,9 +3,9 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/layout/Sidebar";
-import { Navbar } from "@/components/layout/Navbar";
+import { MobileNav } from "@/components/layout/MobileNav";
 import { useAuth } from "@/hooks/useAuth";
-import { AuthProvider } from "@/hooks/useAuth";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, loading } = useAuth();
@@ -34,12 +34,18 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
     <div className="flex h-screen overflow-hidden bg-[var(--background)]">
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Mobile-only top bar */}
-        <div className="lg:hidden">
-          <Navbar />
+        {/* Mobile-only top bar — slim header with drawer trigger */}
+        <div className="lg:hidden flex items-center gap-3 px-4 h-14 border-b border-[var(--border)] bg-[var(--card)] flex-shrink-0">
+          <MobileNav />
+          <div className="flex items-center gap-2">
+            <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-[var(--primary)] text-[var(--primary-foreground)] font-bold text-xs">
+              ATS
+            </div>
+            <span className="font-semibold text-[var(--foreground)] text-sm">Webortex</span>
+          </div>
         </div>
         <main className="flex-1 overflow-y-auto">
-          {children}
+          <ErrorBoundary>{children}</ErrorBoundary>
         </main>
       </div>
     </div>
@@ -47,9 +53,5 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
 }
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <AuthProvider>
-      <DashboardLayoutInner>{children}</DashboardLayoutInner>
-    </AuthProvider>
-  );
+  return <DashboardLayoutInner>{children}</DashboardLayoutInner>;
 }

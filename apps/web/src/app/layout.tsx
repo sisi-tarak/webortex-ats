@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "sonner";
-import { AuthProvider } from "@/hooks/useAuth";
+import { Providers } from "@/components/Providers";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -86,9 +86,9 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
-        <AuthProvider>
+        <Providers>
           {children}
-        </AuthProvider>
+        </Providers>
         <Toaster
           position="top-right"
           richColors
