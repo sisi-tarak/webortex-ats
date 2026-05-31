@@ -57,25 +57,68 @@ export async function getUserResumes(uid: string): Promise<Resume[]> {
 /**
  * Real-time subscription to a user's resumes.
  * Returns an unsubscribe function — call it in useEffect cleanup.
+ *
+ * Falls back to a simpler query (no orderBy) if the composite index has not
+ * yet been deployed to Firestore (common during initial project setup).
  */
 export function subscribeToUserResumes(
   uid: string,
   onChange: (resumes: Resume[]) => void,
   onError?: (error: Error) => void
 ): Unsubscribe {
+  // Primary query — requires composite index (userId ASC, updatedAt DESC)
   const q = query(
     collection(db, "resumes"),
     where("userId", "==", uid),
     orderBy("updatedAt", "desc")
   );
-  return onSnapshot(
+
+  let unsubscribed = false;
+
+  const unsub = onSnapshot(
     q,
     (snap) => {
       const resumes = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Resume);
       onChange(resumes);
     },
-    (error) => onError?.(error)
+    async (error) => {
+      if (unsubscribed) return;
+
+      // "failed-precondition" = index not yet built; "permission-denied" = rules not deployed.
+      // In both cases fall back to a simple getDocs without orderBy so the app stays functional.
+      const isIndexOrPermissionError =
+        (error as { code?: string }).code === "failed-precondition" ||
+        (error as { code?: string }).code === "permission-denied" ||
+        error.message?.toLowerCase().includes("index");
+
+      if (isIndexOrPermissionError) {
+        try {
+          const fallbackQ = query(
+            collection(db, "resumes"),
+            where("userId", "==", uid)
+          );
+          const snap = await getDocs(fallbackQ);
+          const resumes = snap.docs
+            .map((d) => ({ id: d.id, ...d.data() }) as Resume)
+            .sort((a, b) => {
+              const aTime = new Date(a.updatedAt ?? 0).getTime();
+              const bTime = new Date(b.updatedAt ?? 0).getTime();
+              return bTime - aTime;
+            });
+          onChange(resumes);
+        } catch (fallbackErr) {
+          onError?.(fallbackErr as Error);
+        }
+      } else {
+        onError?.(error);
+      }
+    }
   );
+
+  return () => {
+    unsubscribed = true;
+    unsub();
+  };
 }
 
 export async function createResume(

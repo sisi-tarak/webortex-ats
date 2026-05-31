@@ -8,6 +8,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Eye, EyeOff, Mail, Lock, User } from "lucide-react";
 import { signInWithGoogle, signUpWithEmail } from "@/lib/firebase/auth";
+import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { toast } from "sonner";
@@ -30,6 +31,7 @@ function SignupContent() {
   const plan = searchParams.get("plan");
   const [showPassword, setShowPassword] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const { refreshProfile } = useAuth();
 
   const {
     register,
@@ -40,6 +42,8 @@ function SignupContent() {
   const onSubmit = async (data: SignupForm) => {
     try {
       await signUpWithEmail(data.email, data.password, data.displayName);
+      // Refresh profile so the dashboard loads with correct plan/displayName
+      await refreshProfile().catch(() => {});
       toast.success("Account created! Welcome to Webortex ATS Resume 🎉");
       router.push(plan === "pro" ? "/dashboard/billing" : "/dashboard");
     } catch (err: unknown) {
@@ -57,6 +61,7 @@ function SignupContent() {
     setGoogleLoading(true);
     try {
       await signInWithGoogle();
+      await refreshProfile().catch(() => {});
       toast.success("Welcome to Webortex ATS Resume! 🎉");
       router.push(plan === "pro" ? "/dashboard/billing" : "/dashboard");
     } catch {

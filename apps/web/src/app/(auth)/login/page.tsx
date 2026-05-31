@@ -8,6 +8,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Eye, EyeOff, Mail, Lock } from "lucide-react";
 import { signInWithGoogle, signInWithEmail } from "@/lib/firebase/auth";
+import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { toast } from "sonner";
@@ -25,6 +26,7 @@ function LoginContent() {
   const redirect = searchParams.get("redirect") || "/dashboard";
   const [showPassword, setShowPassword] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const { refreshProfile } = useAuth();
 
   const {
     register,
@@ -35,6 +37,8 @@ function LoginContent() {
   const onSubmit = async (data: LoginForm) => {
     try {
       await signInWithEmail(data.email, data.password);
+      // Ensure profile exists (handles users who may have partial state)
+      await refreshProfile().catch(() => {});
       toast.success("Welcome back!");
       router.push(redirect);
     } catch (err: unknown) {
@@ -53,6 +57,7 @@ function LoginContent() {
     setGoogleLoading(true);
     try {
       await signInWithGoogle();
+      await refreshProfile().catch(() => {});
       toast.success("Welcome back!");
       router.push(redirect);
     } catch {

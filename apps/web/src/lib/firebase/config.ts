@@ -36,9 +36,15 @@ export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const storage = getStorage(app);
 
-// Analytics — browser-only, skip when using placeholder credentials
+// Analytics — browser-only. Skip when credentials are placeholder or measurement
+// ID is missing/placeholder (avoids the "measurement ID mismatch" console warning).
+const hasRealMeasurementId =
+  typeof firebaseConfig.measurementId === "string" &&
+  firebaseConfig.measurementId.length > 0 &&
+  !firebaseConfig.measurementId.startsWith("G-XXXXXXXXXX");
+
 export const analytics =
-  typeof window !== "undefined" && isConfigured
+  typeof window !== "undefined" && isConfigured && hasRealMeasurementId
     ? import("firebase/analytics").then(({ getAnalytics, isSupported }) =>
         isSupported().then((yes) => (yes ? getAnalytics(app) : null))
       )
