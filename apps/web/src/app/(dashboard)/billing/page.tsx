@@ -102,7 +102,7 @@ export default function BillingPage() {
 
   if (isPro) {
     return (
-      <div className="p-6 lg:p-8 max-w-4xl">
+      <div>
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-[var(--foreground)]">Billing & Subscription</h1>
         </div>
@@ -150,7 +150,7 @@ export default function BillingPage() {
   }
 
   return (
-    <div className="p-6 lg:p-8 max-w-4xl">
+    <div>
       <div className="mb-8 text-center">
         <Crown className="h-10 w-10 text-[#62ba47] mx-auto mb-3" />
         <h1 className="text-2xl font-bold text-[var(--foreground)] mb-2">Upgrade to Pro</h1>

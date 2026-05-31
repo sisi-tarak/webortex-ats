@@ -114,7 +114,7 @@ export default function ResumesPage() {
   // ── Skeleton ─────────────────────────────────────────────────────────────────
   if (loading) {
     return (
-      <div className="p-6 lg:p-8 max-w-6xl">
+      <div>
         <div className="flex items-center justify-between mb-8">
           <div>
             <div className="h-8 bg-[#222222] rounded w-40 mb-2 animate-pulse" />
@@ -132,7 +132,7 @@ export default function ResumesPage() {
   }
 
   return (
-    <div className="p-6 lg:p-8 max-w-6xl">
+    <div>
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="flex items-start justify-between mb-8 flex-wrap gap-4">
         <div>

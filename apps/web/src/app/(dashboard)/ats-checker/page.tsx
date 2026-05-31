@@ -1,8 +1,11 @@
 "use client";
 
-import { Suspense, useState, useCallback, useEffect } from "react";
+import { Suspense, useState, useCallback, useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation";
-import { BarChart3, FileText, Sparkles, AlertCircle } from "lucide-react";
+import {
+  BarChart3, FileText, Sparkles, AlertCircle,
+  Upload, X, FileUp,
+} from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Textarea } from "@/components/ui/Textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -20,45 +23,29 @@ function extractResumeText(formData: ResumeFormData): string {
   const parts: string[] = [];
   const { contact, summary, experience, education, skills, projects, certifications, achievements, languages } = formData;
 
-  // Contact
   parts.push([contact.fullName, contact.email, contact.phone, contact.location].filter(Boolean).join(" | "));
   if (contact.linkedinUrl) parts.push(contact.linkedinUrl);
-
-  // Summary
   if (summary) parts.push(summary);
 
-  // Experience
   experience.forEach((exp) => {
     parts.push(`${exp.jobTitle} at ${exp.company} | ${exp.startDate} – ${exp.endDate}`);
     exp.bullets.filter(Boolean).forEach((b) => parts.push(`• ${b}`));
   });
 
-  // Education
   education.forEach((edu) => {
     parts.push(`${edu.degree} ${edu.field} – ${edu.institution} (${edu.startDate}–${edu.endDate})`);
     if (edu.gpa) parts.push(`GPA: ${edu.gpa}`);
   });
 
-  // Skills
-  skills.forEach((s) => {
-    parts.push(`${s.category}: ${s.items.join(", ")}`);
-  });
+  skills.forEach((s) => { parts.push(`${s.category}: ${s.items.join(", ")}`); });
 
-  // Projects
   projects.forEach((p) => {
     parts.push(`${p.title} | ${p.technologies.join(", ")}`);
     p.bullets.filter(Boolean).forEach((b) => parts.push(`• ${b}`));
   });
 
-  // Certifications
-  certifications.forEach((c) => {
-    parts.push(`${c.name} – ${c.issuer} (${c.date})`);
-  });
-
-  // Achievements
+  certifications.forEach((c) => { parts.push(`${c.name} – ${c.issuer} (${c.date})`); });
   achievements.filter(Boolean).forEach((a) => parts.push(`• ${a}`));
-
-  // Languages
   languages.forEach((l) => parts.push(`${l.language}: ${l.proficiency}`));
 
   return parts.filter(Boolean).join("\n");
@@ -69,25 +56,26 @@ function ATSCheckerContent() {
   const resumeIdParam = searchParams.get("resumeId");
   const { user, profile, isPro } = useAuth();
   const { resumes } = useResumes();
+
+  const [tab, setTab] = useState<"select" | "upload">("select");
   const [selectedResumeId, setSelectedResumeId] = useState(resumeIdParam || "");
   const [jobDescription, setJobDescription] = useState("");
   const [scoring, setScoring] = useState(false);
   const [report, setReport] = useState<ATSReport | null>(null);
   const [usageCount, setUsageCount] = useState<number | null>(null);
 
-  const selectedResume = resumes.find((r) => r.id === selectedResumeId);
-  void selectedResume; // used for future resume title display
+  // PDF upload state
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Load current month's ATS usage on mount
   const loadUsage = useCallback(async () => {
     if (!user) return;
     const count = await getATSUsage(user.uid);
     setUsageCount(count);
   }, [user]);
 
-  useEffect(() => {
-    loadUsage();
-  }, [loadUsage]);
+  useEffect(() => { loadUsage(); }, [loadUsage]);
 
   const plan = profile?.plan ?? "free";
   const monthlyLimit = PLAN_LIMITS[plan].atsChecksPerMonth;
@@ -95,74 +83,46 @@ function ATSCheckerContent() {
   const checksRemaining = monthlyLimit === Infinity ? Infinity : Math.max(0, monthlyLimit - checksUsed);
   const atLimitForMonth = checksRemaining === 0;
 
+  // ─── Score from selected resume ───────────────────────────────────────────
   const handleScore = async () => {
-    if (!selectedResumeId) {
-      toast.error("Please select a resume to score");
-      return;
-    }
+    if (!selectedResumeId) { toast.error("Please select a resume to score"); return; }
     if (!user) return;
-
-    // ─── Plan enforcement ─────────────────────────────────────────────────
-    if (atLimitForMonth) {
-      toast.error(UPGRADE_MESSAGES.atsLimit);
-      return;
-    }
+    if (atLimitForMonth) { toast.error(UPGRADE_MESSAGES.atsLimit); return; }
 
     setScoring(true);
+    setReport(null);
     try {
-      // Extract plaintext for scoring
+      const selectedResume = resumes.find((r) => r.id === selectedResumeId);
       const resumeText = selectedResume
         ? extractResumeText(selectedResume.formData)
-        : "No resume content available for analysis.";
+        : "No resume content available.";
 
-      // Get Firebase ID token for API auth
       const idToken = await user.getIdToken();
-
       const res = await fetch("/api/ats-score", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${idToken}`,
         },
-        body: JSON.stringify({
-          resumeId: selectedResumeId,
-          resumeText,
-          jobDescription: jobDescription || undefined,
-        }),
+        body: JSON.stringify({ resumeId: selectedResumeId, resumeText, jobDescription: jobDescription || undefined }),
       });
 
       if (res.status === 403) {
         const body = (await res.json()) as { code?: string };
-        if (body.code === "ATS_LIMIT_REACHED") {
-          toast.error(UPGRADE_MESSAGES.atsLimit);
-          return;
-        }
+        if (body.code === "ATS_LIMIT_REACHED") { toast.error(UPGRADE_MESSAGES.atsLimit); return; }
       }
-
-      if (!res.ok) {
-        throw new Error(`Scoring failed: ${res.status}`);
-      }
+      if (!res.ok) throw new Error(`Scoring failed: ${res.status}`);
 
       const data = (await res.json()) as {
-        score: number;
-        reportId: string;
-        breakdown: ATSReport["breakdown"];
-        suggestions: ATSReport["suggestions"];
+        score: number; reportId: string;
+        breakdown: ATSReport["breakdown"]; suggestions: ATSReport["suggestions"];
       };
 
-      const fullReport: ATSReport = {
-        id: data.reportId,
-        resumeId: selectedResumeId,
-        userId: user.uid,
-        score: data.score,
-        breakdown: data.breakdown,
-        suggestions: data.suggestions,
-        jobDescription,
-        createdAt: new Date().toISOString(),
-      };
-
-      setReport(fullReport);
-      // Server-side route already incremented usage — sync local counter
+      setReport({
+        id: data.reportId, resumeId: selectedResumeId, userId: user.uid,
+        score: data.score, breakdown: data.breakdown, suggestions: data.suggestions,
+        jobDescription, createdAt: new Date().toISOString(),
+      });
       setUsageCount((prev) => (prev ?? 0) + 1);
       toast.success("ATS score calculated!");
     } catch {
@@ -172,8 +132,70 @@ function ATSCheckerContent() {
     }
   };
 
+  // ─── Score from uploaded PDF ──────────────────────────────────────────────
+  const handlePdfScore = async () => {
+    if (!pdfFile) { toast.error("Please select a PDF file"); return; }
+    if (!user) return;
+    if (atLimitForMonth) { toast.error(UPGRADE_MESSAGES.atsLimit); return; }
+
+    setScoring(true);
+    setReport(null);
+    try {
+      const idToken = await user.getIdToken();
+      const form = new FormData();
+      form.append("resume", pdfFile);
+      if (jobDescription) form.append("jobDescription", jobDescription);
+
+      const res = await fetch("/api/ats/upload-resume", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${idToken}` },
+        body: form,
+      });
+
+      if (res.status === 403) {
+        const body = (await res.json()) as { code?: string };
+        if (body.code === "ATS_LIMIT_REACHED") { toast.error(UPGRADE_MESSAGES.atsLimit); return; }
+      }
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? `Upload failed: ${res.status}`);
+      }
+
+      const data = (await res.json()) as {
+        score: number; reportId: string;
+        breakdown: ATSReport["breakdown"]; suggestions: ATSReport["suggestions"];
+      };
+
+      setReport({
+        id: data.reportId, resumeId: `uploaded:${user.uid}`, userId: user.uid,
+        score: data.score, breakdown: data.breakdown, suggestions: data.suggestions,
+        jobDescription, createdAt: new Date().toISOString(),
+      });
+      setUsageCount((prev) => (prev ?? 0) + 1);
+      toast.success("ATS score calculated!");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to analyze PDF.");
+    } finally {
+      setScoring(false);
+    }
+  };
+
+  // ─── Drag & drop handlers ─────────────────────────────────────────────────
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file?.type === "application/pdf") {
+      setPdfFile(file);
+    } else {
+      toast.error("Only PDF files are accepted");
+    }
+  };
+
+  const isReady = tab === "select" ? !!selectedResumeId : !!pdfFile;
+
   return (
-    <div className="p-6 lg:p-8 max-w-5xl">
+    <div>
       {/* Header */}
       <div className="mb-8">
         <div className="flex items-center gap-2 mb-2">
@@ -181,57 +203,150 @@ function ATSCheckerContent() {
           <h1 className="text-2xl font-bold text-[var(--foreground)]">ATS Score Checker</h1>
         </div>
         <p className="text-[var(--muted-foreground)]">
-          Check how well your resume will perform against ATS scanners. Paste a job description
-          for a tailored keyword analysis.
+          Check how well your resume performs against ATS scanners. Paste a job description for tailored keyword analysis.
         </p>
+      </div>
+
+      {/* Source tab toggle */}
+      <div className="flex gap-1 p-1 bg-[var(--muted)] rounded-lg w-fit mb-6">
+        <button
+          onClick={() => { setTab("select"); setReport(null); }}
+          className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
+            tab === "select"
+              ? "bg-[var(--card)] text-[var(--foreground)] shadow-sm"
+              : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+          }`}
+        >
+          <FileText className="h-3.5 w-3.5 inline mr-1.5 -mt-0.5" />
+          Select Resume
+        </button>
+        <button
+          onClick={() => { setTab("upload"); setReport(null); }}
+          className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
+            tab === "upload"
+              ? "bg-[var(--card)] text-[var(--foreground)] shadow-sm"
+              : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+          }`}
+        >
+          <Upload className="h-3.5 w-3.5 inline mr-1.5 -mt-0.5" />
+          Upload PDF
+        </button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
         {/* Input Panel */}
         <div className="lg:col-span-2 space-y-4">
-          {/* Resume selector */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm flex items-center gap-2">
-                <FileText className="h-4 w-4 text-[var(--primary)]" />
-                Select Resume
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {resumes.length === 0 ? (
-                <div className="text-center py-4">
-                  <p className="text-sm text-[var(--muted-foreground)] mb-3">No resumes yet</p>
-                  <Button size="sm" variant="outline" asChild>
-                    <a href="/dashboard/resume/new">Create a Resume</a>
-                  </Button>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {resumes.map((resume) => (
-                    <button
-                      key={resume.id}
-                      type="button"
-                      onClick={() => setSelectedResumeId(resume.id)}
-                      className={`w-full text-left p-3 rounded-lg border transition-all text-sm ${
-                        selectedResumeId === resume.id
-                          ? "border-[var(--primary)] bg-[#62ba47]/10 text-[var(--primary)]"
-                          : "border-[var(--border)] hover:border-[var(--primary)]/50 text-[var(--foreground)]"
-                      }`}
-                    >
-                      <div className="font-medium truncate">{resume.title}</div>
-                      {resume.atsScore && (
-                        <div className="text-xs text-[var(--muted-foreground)] mt-0.5">
-                          Last score: {resume.atsScore}%
-                        </div>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
 
-          {/* JD Input */}
+          {/* Tab: Select Resume */}
+          {tab === "select" && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-[var(--primary)]" />
+                  Select Resume
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {resumes.length === 0 ? (
+                  <div className="text-center py-4">
+                    <p className="text-sm text-[var(--muted-foreground)] mb-3">No resumes yet</p>
+                    <Button size="sm" variant="outline" asChild>
+                      <a href="/dashboard/resume/new">Create a Resume</a>
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {resumes.map((resume) => (
+                      <button
+                        key={resume.id}
+                        type="button"
+                        onClick={() => setSelectedResumeId(resume.id)}
+                        className={`w-full text-left p-3 rounded-lg border transition-all text-sm ${
+                          selectedResumeId === resume.id
+                            ? "border-[var(--primary)] bg-[#62ba47]/10 text-[var(--primary)]"
+                            : "border-[var(--border)] hover:border-[var(--primary)]/50 text-[var(--foreground)]"
+                        }`}
+                      >
+                        <div className="font-medium truncate">{resume.title}</div>
+                        {resume.atsScore && (
+                          <div className="text-xs text-[var(--muted-foreground)] mt-0.5">
+                            Last score: {resume.atsScore}%
+                          </div>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Tab: Upload PDF */}
+          {tab === "upload" && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <FileUp className="h-4 w-4 text-[var(--primary)]" />
+                  Upload PDF Resume
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {pdfFile ? (
+                  <div className="flex items-center gap-3 p-3 rounded-lg border border-[var(--primary)]/50 bg-[#62ba47]/10">
+                    <FileText className="h-8 w-8 text-[var(--primary)] flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-[var(--foreground)] truncate">
+                        {pdfFile.name}
+                      </p>
+                      <p className="text-xs text-[var(--muted-foreground)]">
+                        {(pdfFile.size / 1024 / 1024).toFixed(2)} MB
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => { setPdfFile(null); if (fileInputRef.current) fileInputRef.current.value = ""; }}
+                      className="p-1 rounded-md hover:bg-[var(--muted)] text-[var(--muted-foreground)] transition-colors"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <div
+                    onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+                    onDragLeave={() => setDragging(false)}
+                    onDrop={onDrop}
+                    onClick={() => fileInputRef.current?.click()}
+                    className={`border-2 border-dashed rounded-lg p-6 flex flex-col items-center justify-center gap-3 cursor-pointer transition-colors ${
+                      dragging
+                        ? "border-[var(--primary)] bg-[#62ba47]/10"
+                        : "border-[var(--border)] hover:border-[var(--primary)]/50"
+                    }`}
+                  >
+                    <Upload className="h-8 w-8 text-[var(--muted-foreground)]" />
+                    <div className="text-center">
+                      <p className="text-sm font-medium text-[var(--foreground)]">
+                        Drop PDF here or click to browse
+                      </p>
+                      <p className="text-xs text-[var(--muted-foreground)] mt-1">
+                        PDF only · Max 10 MB · Text-based (not scanned)
+                      </p>
+                    </div>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="application/pdf"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) setPdfFile(f);
+                      }}
+                    />
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Job Description — shared for both tabs */}
           <Card>
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
@@ -244,7 +359,7 @@ function ATSCheckerContent() {
             </CardHeader>
             <CardContent>
               <Textarea
-                placeholder="Paste the full job description here for keyword matching...&#10;&#10;The more complete the JD, the better the keyword analysis."
+                placeholder={"Paste the full job description here for keyword matching...\n\nThe more complete the JD, the better the keyword analysis."}
                 value={jobDescription}
                 onChange={(e) => setJobDescription(e.target.value)}
                 className="min-h-[160px] text-xs"
@@ -253,7 +368,7 @@ function ATSCheckerContent() {
             </CardContent>
           </Card>
 
-          {/* Free tier limit warning */}
+          {/* Usage warning */}
           {!isPro && (
             <div className={`p-3 rounded-lg border flex items-start gap-2 ${
               atLimitForMonth
@@ -265,18 +380,14 @@ function ATSCheckerContent() {
                 {atLimitForMonth ? (
                   <>
                     <p className="text-xs font-medium text-red-400">Monthly limit reached</p>
-                    <p className="text-xs text-[var(--muted-foreground)]">
-                      Upgrade to Pro for unlimited ATS checks and AI suggestions.
-                    </p>
+                    <p className="text-xs text-[var(--muted-foreground)]">Upgrade to Pro for unlimited ATS checks.</p>
                   </>
                 ) : (
                   <>
                     <p className="text-xs font-medium text-amber-400">
                       Free plan: {checksRemaining === Infinity ? "∞" : checksRemaining} check{checksRemaining !== 1 ? "s" : ""} remaining this month
                     </p>
-                    <p className="text-xs text-[var(--muted-foreground)]">
-                      Upgrade to Pro for unlimited checks and AI-powered suggestions.
-                    </p>
+                    <p className="text-xs text-[var(--muted-foreground)]">Upgrade to Pro for unlimited checks.</p>
                   </>
                 )}
               </div>
@@ -286,12 +397,16 @@ function ATSCheckerContent() {
           <Button
             className="w-full"
             size="lg"
-            onClick={handleScore}
+            onClick={tab === "select" ? handleScore : handlePdfScore}
             loading={scoring}
-            disabled={!selectedResumeId || atLimitForMonth}
+            disabled={!isReady || atLimitForMonth}
           >
             <BarChart3 className="h-4 w-4" />
-            {scoring ? "Analyzing Resume..." : "Calculate ATS Score"}
+            {scoring
+              ? "Analyzing Resume..."
+              : tab === "upload"
+              ? "Analyze PDF"
+              : "Calculate ATS Score"}
           </Button>
         </div>
 
@@ -304,7 +419,9 @@ function ATSCheckerContent() {
                 Ready to Score Your Resume
               </h3>
               <p className="text-sm text-[var(--muted-foreground)] text-center max-w-xs">
-                Select a resume, optionally paste a job description, and click Calculate ATS Score.
+                {tab === "select"
+                  ? "Select a resume, optionally paste a job description, and click Calculate ATS Score."
+                  : "Upload your PDF resume, optionally paste a job description, and click Analyze PDF."}
               </p>
             </div>
           ) : scoring ? (
@@ -325,7 +442,7 @@ function ATSCheckerContent() {
 export default function ATSCheckerPage() {
   return (
     <Suspense fallback={
-      <div className="p-6 lg:p-8 max-w-5xl">
+      <div>
         <div className="mb-8 animate-pulse">
           <div className="h-8 bg-[#222222] rounded w-64 mb-2" />
           <div className="h-4 bg-[#222222] rounded w-96" />

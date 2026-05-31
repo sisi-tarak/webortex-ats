@@ -82,7 +82,7 @@ export default function NewResumePage() {
   };
 
   return (
-    <div className="p-6 lg:p-8 max-w-4xl">
+    <div className="max-w-4xl">
       {/* Header */}
       <div className="flex items-center gap-3 mb-8">
         <Button variant="ghost" size="icon-sm" asChild>

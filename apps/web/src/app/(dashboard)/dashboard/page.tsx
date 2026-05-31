@@ -38,7 +38,7 @@ export default function DashboardPage() {
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
 
   return (
-    <div className="p-6 lg:p-8 max-w-7xl">
+    <div>
       {/* Header */}
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-[var(--foreground)]">
