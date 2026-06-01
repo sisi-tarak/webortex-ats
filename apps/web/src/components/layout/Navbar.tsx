@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 export function Navbar() {
-  const { user, profile, isAuthenticated, isPro } = useAuth();
+  const { user, profile, isAuthenticated, isPro, loading } = useAuth();
   const router = useRouter();
   const [signingOut, setSigningOut] = useState(false);
 
@@ -51,8 +51,8 @@ export function Navbar() {
             </div>
           </Link>
 
-          {/* Marketing nav links — white text, green hover */}
-          {!isAuthenticated && (
+          {/* Marketing nav links — only shown for unauthenticated, hidden during load to avoid shift */}
+          {!loading && !isAuthenticated && (
             <nav className="hidden md:flex items-center gap-6">
               {["Features", "Templates", "Pricing", "ATS Checker"].map((label) => (
                 <Link
@@ -68,7 +68,13 @@ export function Navbar() {
 
           {/* Right side */}
           <div className="flex items-center gap-3">
-            {!isAuthenticated ? (
+            {/* Stable skeleton while auth resolves — prevents layout shift */}
+            {loading ? (
+              <>
+                <div className="h-8 w-16 rounded-md bg-[var(--muted)] animate-pulse" />
+                <div className="h-8 w-8 rounded-full bg-[var(--muted)] animate-pulse" />
+              </>
+            ) : !isAuthenticated ? (
               <>
                 {/* Ghost = transparent, foreground text (#efefef), hover muted */}
                 <Button variant="ghost" size="sm" asChild>

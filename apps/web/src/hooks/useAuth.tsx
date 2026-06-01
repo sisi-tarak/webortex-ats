@@ -70,8 +70,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(firebaseUser);
 
       if (firebaseUser) {
-        // Start profile load; errors are handled inside loadProfile.
-        loadProfile(firebaseUser.uid).finally(() => setLoading(false));
+        // Unblock UI immediately — auth state is known (user exists).
+        // Profile fills in asynchronously without holding up the loading gate.
+        setLoading(false);
+        loadProfile(firebaseUser.uid);
       } else {
         setProfile(null);
         setLoading(false);

@@ -17,7 +17,10 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
     }
   }, [isAuthenticated, loading, router]);
 
-  if (loading) {
+  // Show spinner for both the loading phase AND the brief window between
+  // "loading done, not authenticated" and the router.push redirect firing.
+  // Returning null instead would unmount children for one frame → visible flash.
+  if (loading || !isAuthenticated) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[var(--background)]">
         <div className="flex flex-col items-center gap-4">
@@ -27,8 +30,6 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
       </div>
     );
   }
-
-  if (!isAuthenticated) return null;
 
   return (
     <div className="flex h-screen overflow-hidden bg-[var(--background)]">
